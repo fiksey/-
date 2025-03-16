@@ -1,0 +1,60 @@
+from __future__ import annotations
+import json
+import logging
+import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cardinal import Cardinal
+from FunPayAPI.updater.events import *
+from FunPayAPI.types import MessageTypes
+from locales.localizer import Localizer
+from Utils.cardinal_tools import format_order_text
+from os.path import exists
+import nltk
+from nltk.tokenize import word_tokenize
+import uuid
+from transformers import pipeline
+
+logger = logging.getLogger("FPC.handlers")
+localizer = Localizer()
+_ = localizer.translate
+
+NAME = "AIResponsePlugin"
+VERSION = "0.0.3"
+DESCRIPTION = "Плагин с AI для автоматической генерации ответов на мошеннические сообщения"
+CREDITS = "@EgorgigNoll"
+UUID = "231540c9-c405-4b29-bf89-2fca9a100ace"
+SETTINGS_PAGE = True
+
+# Загрузка NLTK
+nltk.download('punkt')
+
+chatbot = pipeline("text-generation", model="microsoft/DialoGPT-medium")
+
+SCAM_PATTERNS = [
+    re.compile(r"верни деньги", re.IGNORECASE),
+    re.compile(r"ты тупой", re.IGNORECASE),
+    re.compile(r"кидал", re.IGNORECASE),
+    re.compile(r"обман", re.IGNORECASE),
+    re.compile(r"мошенник", re.IGNORECASE),
+]
+
+def is_scam_message(text: str) -> bool:
+    tokens = word_tokenize(text.lower())
+    for pattern in SCAM_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+def generate_response(text: str) -> str:
+    response = chatbot(text, max_length=100, do_sample=True)[0]["generated_text"]
+    return response
+
+async def on_message(cardinal: Cardinal, event: NewMessageEvent):
+    message_text = event.message.text
+    
+    if is_scam_message(message_text):
+        response = generate_response(message_text)
+        logger.info(f"AI ответ: {response}")
+        await event.message.reply(response)
